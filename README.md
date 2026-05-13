@@ -7,6 +7,7 @@ A local MP3 player for Android.
 - Plays audio files stored on your device
 - Reads and displays cover art from embedded MP3 metadata
 - Lock screen and notification playback controls via Media3
+- Home screen widget for easier control of MP3 playback 
 
 ## Build
 

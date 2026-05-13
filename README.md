@@ -1,6 +1,6 @@
-# Music Player
+# MP3 Player
 
-A local music player for Android.
+A local MP3 player for Android.
 
 ## Features
 

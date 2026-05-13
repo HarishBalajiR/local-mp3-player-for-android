@@ -46,6 +46,7 @@ class PlayerViewModel @Inject constructor(
     private var controllerFuture: ListenableFuture<MediaController>? = null
     private var controller: MediaController? = null
     private val songMap = mutableMapOf<String, SongEntity>()
+    private var pendingPlayRequest: Pair<List<SongEntity>, Int>? = null
 
     init {
         connectToService()
@@ -75,6 +76,10 @@ class PlayerViewModel @Inject constructor(
                 controller = controllerFuture?.get()
                 controller?.addListener(playerListener)
                 syncState()
+                pendingPlayRequest?.let { (songs, startIndex) ->
+                    pendingPlayRequest = null
+                    playSongs(songs, startIndex)
+                }
             } catch (e: Exception) {
                 e.printStackTrace()
                 controller = null
@@ -111,7 +116,13 @@ class PlayerViewModel @Inject constructor(
     // ── Playback controls ─────────────────────────────────────────────────────
 
     fun playSongs(songs: List<SongEntity>, startIndex: Int = 0) {
-        val c = controller ?: run { connectToService(); return }
+        val c = controller ?: run {
+            // After being swiped away from recents, the controller may not be connected yet.
+            // Queue the user's request and execute it once the controller reconnects.
+            pendingPlayRequest = songs to startIndex
+            connectToService()
+            return
+        }
         val items = songs.map { song ->
             MediaItem.Builder()
                 .setMediaId(song.id.toString())

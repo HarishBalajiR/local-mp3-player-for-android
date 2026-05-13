@@ -37,3 +37,10 @@ album_art/
 # API keys / secrets
 secrets.properties
 google-services.json
+
+# Release signing config (never commit)
+keystore.properties
+
+# Built artifacts (don’t commit)
+*.apk
+*.aab

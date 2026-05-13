@@ -91,8 +91,27 @@ class PlayerViewModel @Inject constructor(
         override fun onIsPlayingChanged(isPlaying: Boolean) { syncState() }
         override fun onMediaItemTransition(item: MediaItem?, reason: Int) { syncState() }
         override fun onRepeatModeChanged(mode: Int) { syncState() }
-        override fun onShuffleModeEnabledChanged(enabled: Boolean) { syncState() }
-        override fun onPlaybackStateChanged(state: Int) { syncState() }
+        override fun onShuffleModeEnabledChanged(enabled: Boolean) {
+            // Most users expect shuffle to keep going; enable looping when shuffle is turned on.
+            val c = controller
+            if (enabled && c != null && c.repeatMode == Player.REPEAT_MODE_OFF) {
+                c.repeatMode = Player.REPEAT_MODE_ALL
+            }
+            syncState()
+        }
+        override fun onPlaybackStateChanged(state: Int) {
+            // Safety net: if shuffle is on and repeat is off, restart when the queue ends.
+            val c = controller
+            if (state == Player.STATE_ENDED && c != null &&
+                c.shuffleModeEnabled && c.repeatMode == Player.REPEAT_MODE_OFF &&
+                c.mediaItemCount > 0
+            ) {
+                c.seekToDefaultPosition(0)
+                c.prepare()
+                c.play()
+            }
+            syncState()
+        }
     }
 
     private fun syncState() {
@@ -138,6 +157,9 @@ class PlayerViewModel @Inject constructor(
                 .build()
         }
         c.setMediaItems(items, startIndex, 0L)
+        if (c.shuffleModeEnabled && c.repeatMode == Player.REPEAT_MODE_OFF) {
+            c.repeatMode = Player.REPEAT_MODE_ALL
+        }
         c.prepare()
         c.play()
         syncState()
@@ -149,7 +171,13 @@ class PlayerViewModel @Inject constructor(
     fun seekTo(ms: Long) { controller?.seekTo(ms) }
 
     fun toggleShuffle() {
-        controller?.let { it.shuffleModeEnabled = !it.shuffleModeEnabled }
+        controller?.let {
+            val enable = !it.shuffleModeEnabled
+            it.shuffleModeEnabled = enable
+            if (enable && it.repeatMode == Player.REPEAT_MODE_OFF) {
+                it.repeatMode = Player.REPEAT_MODE_ALL
+            }
+        }
         syncState()
     }
 

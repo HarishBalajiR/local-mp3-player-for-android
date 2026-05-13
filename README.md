@@ -10,9 +10,15 @@ A local MP3 player for Android.
 
 ## Build
 
-1. Clone the repo
-2. Open in Android Studio
-3. Run on a device or emulator (API 26+)
+### Install APK
+1. Go to the Releases page
+2. Download the latest APK
+3. Install and launch it on your Android device
+
+### Build From Source
+1. Clone the repository
+2. Open the project in Android Studio
+3. Run the app on a device or emulator (API 26+)
 
 ## Libraries Used
 

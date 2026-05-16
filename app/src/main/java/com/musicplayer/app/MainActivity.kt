@@ -4,6 +4,7 @@ import android.app.Application
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -34,10 +35,21 @@ class MusicApp : Application()
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val prefs = getSharedPreferences("theme_prefs", android.content.Context.MODE_PRIVATE)
+        
         setContent {
-            var themeMode by remember { mutableStateOf(ThemeMode.SYSTEM) }
-            MusicPlayerTheme(themeMode = themeMode) {
-                MusicPlayerApp(themeMode = themeMode, onThemeChange = { themeMode = it })
+            var currentTheme by remember { 
+                mutableStateOf(com.musicplayer.app.ui.theme.AppTheme.valueOf(prefs.getString("theme", "NAVY") ?: "NAVY"))
+            }
+
+            MusicPlayerTheme(theme = currentTheme) {
+                MusicPlayerApp(
+                    currentTheme = currentTheme,
+                    onThemeChange = { newTheme ->
+                        currentTheme = newTheme
+                        prefs.edit().putString("theme", newTheme.name).apply()
+                    }
+                )
             }
         }
     }
@@ -62,23 +74,30 @@ sealed class Screen(val route: String) {
 // ─── Root composable ──────────────────────────────────────────────────────────
 
 @Composable
-fun MusicPlayerApp(themeMode: ThemeMode, onThemeChange: (ThemeMode) -> Unit) {
+fun MusicPlayerApp(
+    currentTheme: com.musicplayer.app.ui.theme.AppTheme,
+    onThemeChange: (com.musicplayer.app.ui.theme.AppTheme) -> Unit
+) {
     val navController = rememberNavController()
     val vm: PlayerViewModel = hiltViewModel()
     val navBackStack by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStack?.destination?.route
 
     val bottomItems = listOf(
-        Triple(Screen.Library.route,    "Library",   Icons.Default.MusicNote),
-        Triple(Screen.NowPlaying.route, "Playing",   Icons.Default.PlayCircle),
+        Triple(Screen.Library.route,    "Library",   Icons.Default.LibraryMusic),
+        Triple(Screen.NowPlaying.route, "Playing",   Icons.Default.PlayCircleOutline),
         Triple(Screen.Playlists.route,  "Playlists", Icons.AutoMirrored.Filled.QueueMusic),
         Triple(Screen.Queue.route,      "Queue",     Icons.AutoMirrored.Filled.List),
         Triple(Screen.Settings.route,   "Settings",  Icons.Default.Settings),
     )
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
         bottomBar = {
-            NavigationBar {
+            NavigationBar(
+                containerColor = MaterialTheme.colorScheme.surface,
+                contentColor = MaterialTheme.colorScheme.onSurface
+            ) {
                 bottomItems.forEach { (route, label, icon) ->
                     NavigationBarItem(
                         selected = currentRoute == route,
@@ -89,8 +108,15 @@ fun MusicPlayerApp(themeMode: ThemeMode, onThemeChange: (ThemeMode) -> Unit) {
                                 restoreState = true
                             }
                         },
-                        icon = { Icon(icon, label) },
-                        label = { Text(label) }
+                        icon = { Icon(icon, contentDescription = label) },
+                        label = { Text(label, style = MaterialTheme.typography.labelSmall) },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = MaterialTheme.colorScheme.onPrimary,
+                            selectedTextColor = MaterialTheme.colorScheme.onBackground,
+                            indicatorColor = MaterialTheme.colorScheme.primary,
+                            unselectedIconColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
+                            unselectedTextColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f)
+                        )
                     )
                 }
             }
@@ -116,7 +142,7 @@ fun MusicPlayerApp(themeMode: ThemeMode, onThemeChange: (ThemeMode) -> Unit) {
                 QueueScreen(vm)
             }
             composable(Screen.Settings.route) {
-                SettingsScreen(currentTheme = themeMode, onThemeChange = onThemeChange)
+                SettingsScreen(vm, currentTheme, onThemeChange)
             }
             composable(Screen.Ringtone.route) { backStack ->
                 val songId = backStack.arguments?.getString("songId")?.toLongOrNull()

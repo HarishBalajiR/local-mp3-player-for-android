@@ -21,6 +21,7 @@ data class SongEntity(
 data class PlaylistEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val name: String,
+    val coverArtUri: String? = null,
     val createdAt: Long = System.currentTimeMillis()
 )
 
@@ -81,6 +82,9 @@ interface PlaylistDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertPlaylist(playlist: PlaylistEntity): Long
+    
+    @Update
+    suspend fun updatePlaylist(playlist: PlaylistEntity)
 
     @Delete
     suspend fun deletePlaylist(playlist: PlaylistEntity)
@@ -101,7 +105,7 @@ interface PlaylistDao {
 
 @Database(
     entities = [SongEntity::class, PlaylistEntity::class, PlaylistSongCrossRef::class],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class MusicDatabase : RoomDatabase() {

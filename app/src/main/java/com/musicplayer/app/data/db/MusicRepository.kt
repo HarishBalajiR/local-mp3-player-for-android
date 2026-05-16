@@ -154,6 +154,8 @@ class MusicRepository @Inject constructor(
 
     suspend fun createPlaylist(name: String): Long = playlistDao.insertPlaylist(PlaylistEntity(name = name))
 
+    suspend fun updatePlaylist(playlist: PlaylistEntity) = playlistDao.updatePlaylist(playlist)
+
     suspend fun deletePlaylist(playlist: PlaylistEntity) = playlistDao.deletePlaylist(playlist)
 
     suspend fun addSongToPlaylist(playlistId: Long, songId: Long, position: Int = 0) =

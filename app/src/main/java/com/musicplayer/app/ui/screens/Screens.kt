@@ -16,6 +16,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -23,22 +24,40 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.*
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.BlurredEdgeTreatment
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Color
+import androidx.compose.animation.core.*
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import coil.imageLoader
 import coil.request.ImageRequest
 import com.musicplayer.app.data.db.PlaylistEntity
 import com.musicplayer.app.data.db.SongEntity
 import com.musicplayer.app.ui.PlayerViewModel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
 import java.io.File
 import java.util.concurrent.TimeUnit
 
@@ -78,11 +97,13 @@ fun LibraryScreen(vm: PlayerViewModel, onSongClick: (SongEntity) -> Unit) {
         }
     }
 
-    val filtered = remember(songs, search) {
-        if (search.isEmpty()) songs
+    var sortByArtist by remember { mutableStateOf(false) }
+    val filtered = remember(songs, search, sortByArtist) {
+        val list = if (search.isEmpty()) songs
         else songs.filter {
             it.title.contains(search, true) || it.artist.contains(search, true)
         }
+        if (sortByArtist) list.sortedBy { it.artist.lowercase() } else list
     }
 
     // Clear selection when the song list changes (e.g. after delete)
@@ -248,14 +269,18 @@ fun LibraryScreen(vm: PlayerViewModel, onSongClick: (SongEntity) -> Unit) {
                 TopAppBar(
                     title = { Text("Library") },
                     actions = {
+                        IconButton(onClick = { sortByArtist = !sortByArtist }) {
+                            Icon(
+                                Icons.Default.SortByAlpha,
+                                contentDescription = "Sort by Artist",
+                                tint = if (sortByArtist) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                            )
+                        }
                         IconButton(onClick = { showSearch = !showSearch }) {
                             Icon(
                                 if (showSearch) Icons.Default.Close else Icons.Default.Search,
                                 if (showSearch) "Close search" else "Search"
                             )
-                        }
-                        IconButton(onClick = { filePicker.launch(arrayOf("audio/*")) }) {
-                            Icon(Icons.Default.Add, "Import audio")
                         }
                     }
                 )
@@ -270,16 +295,7 @@ fun LibraryScreen(vm: PlayerViewModel, onSongClick: (SongEntity) -> Unit) {
         }
     ) { padding ->
         Column(modifier = Modifier.padding(padding)) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                FilterChip(selected = true, onClick = { }, label = { Text("Songs") })
-                FilterChip(selected = false, onClick = { }, enabled = false, label = { Text("Playlists") })
-                FilterChip(selected = false, onClick = { }, enabled = false, label = { Text("Folders") })
-            }
+// Filter chips removed as per user request
 
             if (showSearch) {
                 OutlinedTextField(
@@ -416,56 +432,70 @@ fun SongRow(
     isSelected: Boolean = false,
     onClick: () -> Unit,
     onLongClick: () -> Unit = {},
-    onAddToQueue: () -> Unit
+    onAddToQueue: () -> Unit // Using this as the 'more' action for now
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .then(
                 if (isSelected) Modifier.background(
-                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
+                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.2f)
                 ) else Modifier
             )
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
-            .padding(horizontal = 16.dp, vertical = 10.dp),
+            .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         if (inSelectionMode) {
             Checkbox(
                 checked = isSelected,
-                onCheckedChange = null, // handled by row click
-                modifier = Modifier.padding(end = 8.dp)
+                onCheckedChange = null,
+                modifier = Modifier.padding(end = 8.dp),
+                colors = CheckboxDefaults.colors(
+                    checkedColor = MaterialTheme.colorScheme.primary,
+                    checkmarkColor = MaterialTheme.colorScheme.onPrimary
+                )
             )
         }
         AlbumArtImage(
             albumArtUri = song.albumArtUri,
             modifier = Modifier
-                .size(50.dp)
-                .clip(RoundedCornerShape(6.dp))
+                .size(56.dp)
+                .clip(RoundedCornerShape(8.dp))
                 .background(MaterialTheme.colorScheme.surfaceVariant),
             crossfade = true
         )
-        Spacer(Modifier.width(12.dp))
+        Spacer(Modifier.width(16.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                song.title, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                fontWeight = if (isPlaying) FontWeight.Bold else FontWeight.Normal,
-                color = if (isPlaying) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                song.title,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.titleMedium,
+                color = if (isPlaying) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onBackground
             )
+            Spacer(Modifier.height(4.dp))
             Text(
-                song.artist, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                song.artist,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f)
             )
         }
+        Spacer(Modifier.width(8.dp))
         Text(
             song.duration.toTimeString(),
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.85f)
         )
         if (!inSelectionMode) {
-            IconButton(onClick = onAddToQueue) {
-                Icon(Icons.AutoMirrored.Filled.PlaylistAdd, "Add to queue", modifier = Modifier.size(20.dp))
+            IconButton(onClick = onLongClick) { // Reusing onLongClick for the more menu
+                Icon(
+                    Icons.Default.MoreVert,
+                    contentDescription = "More options",
+                    tint = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.85f)
+                )
             }
         }
     }
@@ -473,6 +503,7 @@ fun SongRow(
 
 // ─── Now Playing ──────────────────────────────────────────────────────────────
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun NowPlayingScreen(vm: PlayerViewModel) {
     val state by vm.state.collectAsState()
@@ -486,101 +517,203 @@ fun NowPlayingScreen(vm: PlayerViewModel) {
         }
     }
 
-    Column(
-        modifier = Modifier.fillMaxSize().padding(24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Spacer(Modifier.height(16.dp))
+    val isFavorite by remember(song) {
+        if (song != null) vm.isFavoriteFlow(song.id) else kotlinx.coroutines.flow.flowOf(false)
+    }.collectAsState(initial = false)
 
-        AlbumArtImage(
-            albumArtUri = song?.albumArtUri,
-            modifier = Modifier
-                .size(280.dp)
-                .clip(RoundedCornerShape(6.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant),
-            crossfade = true
-        )
+    val context = LocalContext.current
+    var dominantColor by remember { mutableStateOf<Color?>(null) }
+    var mutedColor by remember { mutableStateOf<Color?>(null) }
 
-        Spacer(Modifier.height(32.dp))
-
-        Text(
-            song?.title ?: "No song playing",
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.Bold,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
-        Text(
-            song?.artist ?: "",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-
-        Spacer(Modifier.height(24.dp))
-
-        Slider(
-            value = if (state.duration > 0) progress.toFloat() / state.duration else 0f,
-            onValueChange = { vm.seekTo((it * state.duration).toLong()) },
-            modifier = Modifier.fillMaxWidth()
-        )
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(progress.toTimeString(), style = MaterialTheme.typography.labelSmall)
-            Text(state.duration.toTimeString(), style = MaterialTheme.typography.labelSmall)
+    LaunchedEffect(song?.albumArtUri) {
+        val uri = song?.albumArtUri
+        if (uri != null) {
+            val request = coil.request.ImageRequest.Builder(context)
+                .data(uri)
+                .allowHardware(false) // Hardware bitmaps cannot be used with Palette
+                .build()
+            val result = context.imageLoader.execute(request)
+            if (result is coil.request.SuccessResult) {
+                val bitmap = (result.drawable as? android.graphics.drawable.BitmapDrawable)?.bitmap
+                if (bitmap != null) {
+                    androidx.palette.graphics.Palette.from(bitmap).generate { palette ->
+                        dominantColor = palette?.dominantSwatch?.rgb?.let { Color(it) }
+                            ?: palette?.mutedSwatch?.rgb?.let { Color(it) }
+                        mutedColor = palette?.darkMutedSwatch?.rgb?.let { Color(it) }
+                            ?: palette?.darkVibrantSwatch?.rgb?.let { Color(it) }
+                    }
+                }
+            }
+        } else {
+            dominantColor = null
+            mutedColor = null
         }
+    }
 
-        Spacer(Modifier.height(16.dp))
+    val animatedDominantColor by animateColorAsState(
+        targetValue = dominantColor ?: MaterialTheme.colorScheme.background,
+        animationSpec = tween(durationMillis = 1000, easing = LinearEasing)
+    )
+    val animatedMutedColor by animateColorAsState(
+        targetValue = mutedColor ?: MaterialTheme.colorScheme.background,
+        animationSpec = tween(durationMillis = 1000, easing = LinearEasing)
+    )
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceEvenly,
-            verticalAlignment = Alignment.CenterVertically
+    val backgroundBrush = androidx.compose.ui.graphics.Brush.verticalGradient(
+        colors = listOf(
+            animatedDominantColor.copy(alpha = 0.7f),
+            animatedMutedColor.copy(alpha = 0.9f),
+            MaterialTheme.colorScheme.background
+        )
+    )
+
+    Box(modifier = Modifier.fillMaxSize().background(backgroundBrush)) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 24.dp, vertical = 32.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            IconButton(onClick = { vm.toggleShuffle() }) {
-                Icon(
-                    Icons.Default.Shuffle, "Shuffle",
-                    tint = if (state.shuffleEnabled) MaterialTheme.colorScheme.primary
-                    else MaterialTheme.colorScheme.onSurface
-                )
-            }
-            IconButton(onClick = { vm.skipPrev() }) {
-                Icon(Icons.Default.SkipPrevious, "Prev", modifier = Modifier.size(36.dp))
-            }
+            // Top App Bar area
             Box(
-                modifier = Modifier
-                    .size(64.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primary)
-                    .clickable { vm.togglePlayPause() },
+                modifier = Modifier.fillMaxWidth(),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(
-                    if (state.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                    "Play/Pause",
-                    tint = MaterialTheme.colorScheme.onPrimary,
-                    modifier = Modifier.size(36.dp)
+                Text(
+                    text = "NOW PLAYING",
+                    style = MaterialTheme.typography.labelMedium.copy(letterSpacing = 2.sp),
+                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.8f),
+                    fontWeight = FontWeight.Bold
                 )
             }
-            IconButton(onClick = { vm.skipNext() }) {
-                Icon(Icons.Default.SkipNext, "Next", modifier = Modifier.size(36.dp))
+
+            Spacer(Modifier.weight(1f))
+
+            // Hero Album Art
+            AlbumArtImage(
+                albumArtUri = song?.albumArtUri,
+                modifier = Modifier
+                    .size(320.dp)
+                    .shadow(32.dp, RoundedCornerShape(24.dp))
+                    .clip(RoundedCornerShape(24.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                crossfade = true
+            )
+
+            Spacer(Modifier.height(56.dp))
+
+            // Track Info & Favorite
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = song?.title ?: "No song playing",
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onBackground,
+                        maxLines = 1,
+                        modifier = Modifier.basicMarquee()
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = song?.artist ?: "",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                IconButton(onClick = { song?.let { vm.toggleFavorite(it) } }) {
+                    Icon(
+                        imageVector = if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                        contentDescription = "Favorite",
+                        tint = if (isFavorite) Color(0xFFFF4081) else MaterialTheme.colorScheme.onBackground,
+                        modifier = Modifier.size(32.dp)
+                    )
+                }
             }
-            IconButton(onClick = { vm.cycleRepeat() }) {
-                Icon(
-                    when (state.repeatMode) {
-                        androidx.media3.common.Player.REPEAT_MODE_ONE -> Icons.Default.RepeatOne
-                        else -> Icons.Default.Repeat
-                    },
-                    "Repeat",
-                    tint = if (state.repeatMode != androidx.media3.common.Player.REPEAT_MODE_OFF)
-                        MaterialTheme.colorScheme.primary
-                    else MaterialTheme.colorScheme.onSurface
+
+            Spacer(Modifier.height(32.dp))
+
+            // Scrubber
+            Slider(
+                value = if (state.duration > 0) progress.toFloat() / state.duration else 0f,
+                onValueChange = { vm.seekTo((it * state.duration).toLong()) },
+                modifier = Modifier.fillMaxWidth(),
+                colors = SliderDefaults.colors(
+                    thumbColor = MaterialTheme.colorScheme.onBackground,
+                    activeTrackColor = MaterialTheme.colorScheme.onBackground,
+                    inactiveTrackColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.3f)
                 )
+            )
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 4.dp), 
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(progress.toTimeString(), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f))
+                Text(state.duration.toTimeString(), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f))
             }
+
+            Spacer(Modifier.height(24.dp))
+
+            // Main Controls
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(onClick = { vm.toggleShuffle() }) {
+                    Icon(
+                        Icons.Default.Shuffle, "Shuffle",
+                        tint = if (state.shuffleEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onBackground.copy(alpha=0.6f)
+                    )
+                }
+                IconButton(onClick = { vm.skipPrev() }) {
+                    Icon(Icons.Default.SkipPrevious, "Prev", modifier = Modifier.size(44.dp), tint = MaterialTheme.colorScheme.onBackground)
+                }
+                Box(
+                    modifier = Modifier
+                        .size(80.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primary)
+                        .clickable { vm.togglePlayPause() },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        if (state.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                        "Play/Pause",
+                        tint = MaterialTheme.colorScheme.onPrimary,
+                        modifier = Modifier.size(44.dp)
+                    )
+                }
+                IconButton(onClick = { vm.skipNext() }) {
+                    Icon(Icons.Default.SkipNext, "Next", modifier = Modifier.size(44.dp), tint = MaterialTheme.colorScheme.onBackground)
+                }
+                IconButton(onClick = { vm.cycleRepeat() }) {
+                    Icon(
+                        when (state.repeatMode) {
+                            androidx.media3.common.Player.REPEAT_MODE_ONE -> Icons.Default.RepeatOne
+                            else -> Icons.Default.Repeat
+                        },
+                        "Repeat",
+                        tint = if (state.repeatMode != androidx.media3.common.Player.REPEAT_MODE_OFF)
+                            MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onBackground.copy(alpha=0.6f)
+                    )
+                }
+            }
+
+            Spacer(Modifier.weight(0.5f))
         }
     }
 }
 
 // ─── Playlists ────────────────────────────────────────────────────────────────
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PlaylistsScreen(vm: PlayerViewModel, onPlaylistClick: (PlaylistEntity) -> Unit) {
     val playlists by vm.allPlaylists.collectAsState()
@@ -615,30 +748,181 @@ fun PlaylistsScreen(vm: PlayerViewModel, onPlaylistClick: (PlaylistEntity) -> Un
     }
 
     Scaffold(
-        floatingActionButton = {
-            FloatingActionButton(onClick = { showCreate = true }) {
-                Icon(Icons.Default.Add, "New Playlist")
-            }
+        topBar = {
+            TopAppBar(
+                title = { Text("Playlists", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.headlineMedium) },
+                actions = {
+                    IconButton(onClick = { showCreate = true }) {
+                        Icon(Icons.Default.Add, "New Playlist", tint = MaterialTheme.colorScheme.primary)
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background,
+                    titleContentColor = MaterialTheme.colorScheme.onBackground
+                )
+            )
         }
     ) { padding ->
         if (playlists.isEmpty()) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("Tap + to create a playlist", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.QueueMusic,
+                        contentDescription = null,
+                        modifier = Modifier.size(64.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                    )
+                    Spacer(Modifier.height(16.dp))
+                    Text(
+                        "No playlists yet",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        "Tap + to create a new playlist",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                    )
+                }
             }
         } else {
-            LazyColumn(modifier = Modifier.padding(padding)) {
-                itemsIndexed(playlists, key = { _, p -> p.id }) { _, playlist ->
-                    ListItem(
-                        headlineContent = { Text(playlist.name) },
-                        leadingContent = { Icon(Icons.AutoMirrored.Filled.QueueMusic, null) },
-                        trailingContent = {
-                            IconButton(onClick = { vm.deletePlaylist(playlist) }) {
-                                Icon(Icons.Default.Delete, "Delete")
-                            }
-                        },
-                        modifier = Modifier.clickable { onPlaylistClick(playlist) }
+            LazyColumn(
+                modifier = Modifier.fillMaxSize().padding(padding),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+            ) {
+                items(playlists, key = { it.id }) { playlist ->
+                    PlaylistDesignCard(
+                        playlist = playlist,
+                        vm = vm,
+                        onClick = { onPlaylistClick(playlist) },
+                        onDelete = { vm.deletePlaylist(playlist) }
                     )
-                    HorizontalDivider(thickness = 0.5.dp)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun PlaylistDesignCard(playlist: PlaylistEntity, vm: PlayerViewModel, onClick: () -> Unit, onDelete: () -> Unit) {
+    val context = LocalContext.current
+    val playlistWithSongs by vm.getPlaylistWithSongs(playlist.id).collectAsState(initial = null)
+    val songCount = playlistWithSongs?.songs?.size ?: 0
+    
+    var showMenu by remember { mutableStateOf(false) }
+
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) {
+            // Save image to internal storage to persist access
+            kotlinx.coroutines.GlobalScope.launch(Dispatchers.IO) {
+                try {
+                    val inputStream = context.contentResolver.openInputStream(uri)
+                    if (inputStream != null) {
+                        // Delete old cover art if it exists
+                        playlist.coverArtUri?.let { oldPath ->
+                            val oldFile = File(oldPath)
+                            if (oldFile.exists()) oldFile.delete()
+                        }
+                        
+                        // Generate a unique file name to bypass Coil's image cache
+                        val uniqueId = System.currentTimeMillis()
+                        val file = File(context.filesDir, "playlist_cover_${playlist.id}_$uniqueId.jpg")
+                        file.outputStream().use { out -> inputStream.copyTo(out) }
+                        inputStream.close()
+                        
+                        // Update playlist in DB
+                        vm.updatePlaylist(playlist.copy(coverArtUri = file.absolutePath))
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+        }
+    }
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp)
+            .clickable { onClick() },
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Cover Art Image (Clickable to change)
+            Box(
+                modifier = Modifier
+                    .size(160.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                    .clickable { 
+                        launcher.launch(androidx.activity.result.PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) 
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                if (playlist.coverArtUri != null) {
+                    AsyncImage(
+                        model = ImageRequest.Builder(context)
+                            .data(File(playlist.coverArtUri))
+                            .crossfade(true)
+                            .build(),
+                        contentDescription = "Cover Art",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    Icon(
+                        Icons.AutoMirrored.Filled.QueueMusic,
+                        contentDescription = "Add Cover",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                        modifier = Modifier.size(64.dp)
+                    )
+                }
+            }
+            
+            Spacer(modifier = Modifier.width(24.dp))
+            
+            // Text Details
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = playlist.name,
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "$songCount songs",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1
+                )
+            }
+            
+            // Overflow Menu
+            Box {
+                IconButton(onClick = { showMenu = true }) {
+                    Icon(Icons.Default.MoreVert, contentDescription = "Options", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                DropdownMenu(
+                    expanded = showMenu,
+                    onDismissRequest = { showMenu = false }
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("Delete Playlist", color = MaterialTheme.colorScheme.error) },
+                        onClick = {
+                            showMenu = false
+                            onDelete()
+                        },
+                        leadingIcon = {
+                            Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error)
+                        }
+                    )
                 }
             }
         }
@@ -647,6 +931,7 @@ fun PlaylistsScreen(vm: PlayerViewModel, onPlaylistClick: (PlaylistEntity) -> Un
 
 // ─── Queue Screen ─────────────────────────────────────────────────────────────
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun QueueScreen(vm: PlayerViewModel) {
     val state by vm.state.collectAsState()
@@ -664,54 +949,143 @@ fun QueueScreen(vm: PlayerViewModel) {
         }
     )
 
-    if (queue.isEmpty()) {
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text("Queue is empty", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        return
-    }
-
-    LazyColumn(
-        state = reorderState.listState,
-        modifier = Modifier.reorderable(reorderState).detectReorderAfterLongPress(reorderState)
-    ) {
-        itemsIndexed(queue, key = { i, s -> "$i-${s.id}" }) { index, song ->
-            ReorderableItem(reorderState, key = "$index-${song.id}") { isDragging ->
-                val elevation = if (isDragging) 8.dp else 0.dp
-                Surface(shadowElevation = elevation) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            Icons.Default.DragHandle,
-                            contentDescription = "Drag",
-                            modifier = Modifier.padding(end = 12.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                song.title, maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                style = MaterialTheme.typography.bodyLarge
-                            )
-                            Text(
-                                song.artist, maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        IconButton(onClick = {
-                            queue.removeAt(index)
-                            vm.removeFromQueue(index)
-                        }) {
-                            Icon(Icons.Default.Close, "Remove")
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Queue", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.headlineMedium) },
+                actions = {
+                    if (queue.isNotEmpty()) {
+                        IconButton(onClick = { vm.clearQueue() }) {
+                            Icon(Icons.Default.DeleteOutline, contentDescription = "Clear Queue", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
-                    HorizontalDivider(thickness = 0.5.dp)
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background,
+                    titleContentColor = MaterialTheme.colorScheme.onBackground
+                )
+            )
+        }
+    ) { padding ->
+        if (queue.isEmpty()) {
+            Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.QueueMusic,
+                        contentDescription = null,
+                        modifier = Modifier.size(64.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                    )
+                    Spacer(Modifier.height(16.dp))
+                    Text(
+                        "Queue is empty",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            return@Scaffold
+        }
+
+        LazyColumn(
+            state = reorderState.listState,
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .reorderable(reorderState)
+                .detectReorderAfterLongPress(reorderState),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+        ) {
+            itemsIndexed(queue, key = { i, s -> "$i-${s.id}" }) { index, song ->
+                val isPlaying = state.currentSong?.id == song.id
+
+                ReorderableItem(reorderState, key = "$index-${song.id}") { isDragging ->
+                    val elevation = if (isDragging) 8.dp else 0.dp
+                    val backgroundColor = if (isPlaying) {
+                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f)
+                    } else if (isDragging) {
+                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                    } else {
+                        Color.Transparent
+                    }
+
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                        shape = RoundedCornerShape(16.dp),
+                        color = backgroundColor,
+                        shadowElevation = elevation
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            // Hamburger (drag handle)
+                            Icon(
+                                Icons.Default.Menu,
+                                contentDescription = "Drag",
+                                modifier = Modifier.padding(end = 12.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+
+                            // Cover Art
+                            Box(
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                            ) {
+                                AlbumArtImage(
+                                    albumArtUri = song.albumArtUri,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.width(16.dp))
+
+                            // Text Details
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = song.title,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontWeight = if (isPlaying) FontWeight.Bold else FontWeight.Normal,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = song.artist,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+
+                            // Playing Indicator or X Button
+                            if (isPlaying) {
+                                AudioEqualizerAnim(
+                                    modifier = Modifier.padding(end = 12.dp)
+                                )
+                            }
+
+                            IconButton(
+                                onClick = {
+                                    queue.removeAt(index)
+                                    vm.removeFromQueue(index)
+                                }
+                            ) {
+                                Icon(
+                                    Icons.Default.Close,
+                                    contentDescription = "Remove",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -770,5 +1144,68 @@ private fun songAlbumArtData(uriOrPath: String?): Any? {
             uriOrPath.startsWith("https://") -> uriOrPath
         uriOrPath.startsWith("/") -> File(uriOrPath)
         else -> uriOrPath
+    }
+}
+
+// ─── Animations ───────────────────────────────────────────────────────────────
+
+@Composable
+fun AudioEqualizerAnim(modifier: Modifier = Modifier) {
+    val infiniteTransition = rememberInfiniteTransition(label = "equalizer")
+    
+    val height1 by infiniteTransition.animateFloat(
+        initialValue = 0.3f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(400, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "bar1"
+    )
+    val height2 by infiniteTransition.animateFloat(
+        initialValue = 1f,
+        targetValue = 0.4f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(500, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "bar2"
+    )
+    val height3 by infiniteTransition.animateFloat(
+        initialValue = 0.5f,
+        targetValue = 0.9f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(300, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "bar3"
+    )
+
+    Row(
+        modifier = modifier.size(16.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.Bottom
+    ) {
+        Box(
+            modifier = Modifier
+                .width(4.dp)
+                .fillMaxHeight(height1)
+                .clip(RoundedCornerShape(2.dp))
+                .background(MaterialTheme.colorScheme.primary)
+        )
+        Box(
+            modifier = Modifier
+                .width(4.dp)
+                .fillMaxHeight(height2)
+                .clip(RoundedCornerShape(2.dp))
+                .background(MaterialTheme.colorScheme.primary)
+        )
+        Box(
+            modifier = Modifier
+                .width(4.dp)
+                .fillMaxHeight(height3)
+                .clip(RoundedCornerShape(2.dp))
+                .background(MaterialTheme.colorScheme.primary)
+        )
     }
 }

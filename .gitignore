@@ -44,3 +44,7 @@ keystore.properties
 # Built artifacts (don’t commit)
 *.apk
 *.aab
+mp6zhbyd-Demo-Video.mp4
+app/release/baselineProfiles/0/app-release.dm
+app/release/baselineProfiles/1/app-release.dm
+app/release/output-metadata.json

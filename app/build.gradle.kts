@@ -88,6 +88,7 @@ dependencies {
 
     // Coil for album art
     implementation(libs.coil.compose)
+    implementation(libs.androidx.palette.ktx)
 
     // Coroutines
     implementation(libs.kotlinx.coroutines.android)

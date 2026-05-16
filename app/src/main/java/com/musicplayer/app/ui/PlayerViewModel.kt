@@ -28,7 +28,9 @@ data class PlayerState(
     val duration: Long = 0L,
     val repeatMode: Int = Player.REPEAT_MODE_OFF,
     val shuffleEnabled: Boolean = false,
-    val queue: List<SongEntity> = emptyList()
+    val queue: List<SongEntity> = emptyList(),
+    val sleepTimerMillisLeft: Long = 0L,
+    val isSleepTimerActive: Boolean = false
 )
 
 @HiltViewModel
@@ -45,6 +47,7 @@ class PlayerViewModel @Inject constructor(
 
     private var controllerFuture: ListenableFuture<MediaController>? = null
     private var controller: MediaController? = null
+    private var sleepTimerJob: kotlinx.coroutines.Job? = null
     private val songMap = mutableMapOf<String, SongEntity>()
     private var pendingPlayRequest: Pair<List<SongEntity>, Int>? = null
 
@@ -121,15 +124,17 @@ class PlayerViewModel @Inject constructor(
         val queue = (0 until c.mediaItemCount).mapNotNull { i ->
             songMap[c.getMediaItemAt(i).mediaId]
         }
-        _state.value = PlayerState(
-            isPlaying = c.isPlaying,
-            currentSong = currentSong,
-            progress = c.currentPosition,
-            duration = c.duration.coerceAtLeast(0L),
-            repeatMode = c.repeatMode,
-            shuffleEnabled = c.shuffleModeEnabled,
-            queue = queue
-        )
+        _state.update { 
+            it.copy(
+                isPlaying = c.isPlaying,
+                currentSong = currentSong,
+                progress = c.currentPosition,
+                duration = c.duration.coerceAtLeast(0L),
+                repeatMode = c.repeatMode,
+                shuffleEnabled = c.shuffleModeEnabled,
+                queue = queue
+            )
+        }
     }
 
     // ── Playback controls ─────────────────────────────────────────────────────
@@ -212,6 +217,11 @@ class PlayerViewModel @Inject constructor(
         syncState()
     }
 
+    fun clearQueue() {
+        controller?.clearMediaItems()
+        syncState()
+    }
+
     fun removeFromQueue(index: Int) {
         controller?.removeMediaItem(index)
         syncState()
@@ -224,9 +234,48 @@ class PlayerViewModel @Inject constructor(
 
     fun getProgress(): Long = controller?.currentPosition ?: 0L
 
+    // ── Sleep Timer ───────────────────────────────────────────────────────────
+
+    fun setSleepTimer(millis: Long) {
+        sleepTimerJob?.cancel()
+        if (millis <= 0) {
+            _state.update { it.copy(isSleepTimerActive = false, sleepTimerMillisLeft = 0) }
+            controller?.volume = 1f
+            return
+        }
+
+        _state.update { it.copy(isSleepTimerActive = true, sleepTimerMillisLeft = millis) }
+
+        sleepTimerJob = viewModelScope.launch {
+            var remaining = millis
+            val fadeStartMillis = 30_000L // Start fade out 30s before end
+
+            while (remaining > 0) {
+                delay(1000)
+                remaining -= 1000
+                _state.update { it.copy(sleepTimerMillisLeft = remaining.coerceAtLeast(0)) }
+
+                // Premium Polish: Fade out in the last 30 seconds
+                if (remaining <= fadeStartMillis) {
+                    val volume = (remaining.toFloat() / fadeStartMillis).coerceIn(0f, 1f)
+                    controller?.volume = volume
+                }
+            }
+
+            controller?.pause()
+            _state.update { it.copy(isSleepTimerActive = false, sleepTimerMillisLeft = 0) }
+            // Reset volume for next time
+            delay(500)
+            controller?.volume = 1f
+        }
+    }
+
     // ── Playlists ─────────────────────────────────────────────────────────────
 
     fun createPlaylist(name: String) = viewModelScope.launch { repository.createPlaylist(name) }
+
+    fun updatePlaylist(playlist: com.musicplayer.app.data.db.PlaylistEntity) =
+        viewModelScope.launch { repository.updatePlaylist(playlist) }
 
     fun addSongToPlaylist(playlistId: Long, songId: Long) =
         viewModelScope.launch { repository.addSongToPlaylist(playlistId, songId) }
@@ -247,6 +296,35 @@ class PlayerViewModel @Inject constructor(
 
     fun addSongsToPlaylist(playlistId: Long, songIds: List<Long>) =
         viewModelScope.launch { songIds.forEach { repository.addSongToPlaylist(playlistId, it) } }
+
+    // ── Favorites ─────────────────────────────────────────────────────────────
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    fun isFavoriteFlow(songId: Long): Flow<Boolean> = allPlaylists.flatMapLatest { playlists ->
+        val favPlaylist = playlists.find { it.name.equals("Favourites", ignoreCase = true) }
+        if (favPlaylist == null) {
+            flowOf(false)
+        } else {
+            repository.getPlaylistWithSongs(favPlaylist.id).map { it?.songs?.any { s -> s.id == songId } == true }
+        }
+    }
+
+    fun toggleFavorite(song: SongEntity) = viewModelScope.launch {
+        val favPlaylist = allPlaylists.value.find { it.name.equals("Favourites", ignoreCase = true) }
+        val playlistId = if (favPlaylist != null) {
+            favPlaylist.id
+        } else {
+            repository.createPlaylist("Favourites")
+        }
+
+        val playlistWithSongs = repository.getPlaylistWithSongs(playlistId).firstOrNull()
+        val isFav = playlistWithSongs?.songs?.any { it.id == song.id } == true
+        if (isFav) {
+            repository.removeSongFromPlaylist(playlistId, song.id)
+        } else {
+            repository.addSongToPlaylist(playlistId, song.id)
+        }
+    }
 
     override fun onCleared() {
         controller?.removeListener(playerListener)

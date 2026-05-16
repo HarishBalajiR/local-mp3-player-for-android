@@ -50,6 +50,7 @@ fun LibraryScreen(vm: PlayerViewModel, onSongClick: (SongEntity) -> Unit) {
     val songs by vm.allSongs.collectAsState()
     val playlists by vm.allPlaylists.collectAsState()
     var search by remember { mutableStateOf("") }
+    var showSearch by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
@@ -243,6 +244,21 @@ fun LibraryScreen(vm: PlayerViewModel, onSongClick: (SongEntity) -> Unit) {
                         actionIconContentColor = MaterialTheme.colorScheme.onPrimaryContainer
                     )
                 )
+            } else {
+                TopAppBar(
+                    title = { Text("Library") },
+                    actions = {
+                        IconButton(onClick = { showSearch = !showSearch }) {
+                            Icon(
+                                if (showSearch) Icons.Default.Close else Icons.Default.Search,
+                                if (showSearch) "Close search" else "Search"
+                            )
+                        }
+                        IconButton(onClick = { filePicker.launch(arrayOf("audio/*")) }) {
+                            Icon(Icons.Default.Add, "Import audio")
+                        }
+                    }
+                )
             }
         },
         floatingActionButton = {
@@ -254,18 +270,63 @@ fun LibraryScreen(vm: PlayerViewModel, onSongClick: (SongEntity) -> Unit) {
         }
     ) { padding ->
         Column(modifier = Modifier.padding(padding)) {
-            OutlinedTextField(
-                value = search,
-                onValueChange = { search = it },
-                modifier = Modifier.fillMaxWidth().padding(12.dp),
-                placeholder = { Text("Search songs…") },
-                leadingIcon = { Icon(Icons.Default.Search, null) },
-                singleLine = true,
-                shape = RoundedCornerShape(50)
-            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                FilterChip(selected = true, onClick = { }, label = { Text("Songs") })
+                FilterChip(selected = false, onClick = { }, enabled = false, label = { Text("Playlists") })
+                FilterChip(selected = false, onClick = { }, enabled = false, label = { Text("Folders") })
+            }
+
+            if (showSearch) {
+                OutlinedTextField(
+                    value = search,
+                    onValueChange = { search = it },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 4.dp),
+                    placeholder = { Text("Search songs…") },
+                    leadingIcon = { Icon(Icons.Default.Search, null) },
+                    trailingIcon = {
+                        if (search.isNotEmpty()) {
+                            IconButton(onClick = { search = "" }) { Icon(Icons.Default.Close, "Clear") }
+                        }
+                    },
+                    singleLine = true,
+                    shape = RoundedCornerShape(50)
+                )
+            }
             if (filtered.isEmpty()) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("Tap + to import MP3 files", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                        shape = RoundedCornerShape(16.dp),
+                        modifier = Modifier.padding(24.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(20.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Icon(Icons.Default.MusicNote, null, modifier = Modifier.size(36.dp))
+                            Spacer(Modifier.height(12.dp))
+                            Text("No songs found", style = MaterialTheme.typography.titleMedium)
+                            Spacer(Modifier.height(6.dp))
+                            Text(
+                                "Import audio files or copy them to Music/ or Downloads/.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(Modifier.height(14.dp))
+                            Button(onClick = { filePicker.launch(arrayOf("audio/*")) }) {
+                                Icon(Icons.Default.Add, null)
+                                Spacer(Modifier.width(8.dp))
+                                Text("Import")
+                            }
+                        }
+                    }
                 }
             } else {
                 LazyColumn {
